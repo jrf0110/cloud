@@ -4475,6 +4475,36 @@ export const kiloclaw_email_log = pgTable(
 
 export type KiloClawEmailLog = typeof kiloclaw_email_log.$inferSelect;
 
+// Outbox marker for transactional emails that need durable idempotency beyond
+// their triggering side effect. For top-up confirmations, `processTopUp`
+// commits the credit_transactions row before firing the email via `after()`;
+// if the process exits between those steps, a webhook retry can observe that
+// the transactional email marker is missing and recover the email exactly once.
+export const transactional_email_log = pgTable(
+  'transactional_email_log',
+  {
+    id: uuid()
+      .default(sql`gen_random_uuid()`)
+      .primaryKey()
+      .notNull(),
+    user_id: text()
+      .notNull()
+      .references(() => kilocode_users.id),
+    email_type: text().notNull(),
+    idempotency_key: text().notNull(),
+    sent_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex('UQ_transactional_email_log_type_idempotency_key').on(
+      table.email_type,
+      table.idempotency_key
+    ),
+    index('IDX_transactional_email_log_user_id').on(table.user_id),
+  ]
+);
+
+export type TransactionalEmailLog = typeof transactional_email_log.$inferSelect;
+
 // Bot Request Logs — tracks each message handled by the new bot (src/lib/bot.ts).
 // Rows are created as 'pending' on receipt and updated as processing progresses.
 export type BotRequestStatus = 'pending' | 'completed' | 'error';

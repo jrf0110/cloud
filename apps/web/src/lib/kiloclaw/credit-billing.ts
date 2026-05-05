@@ -669,6 +669,12 @@ export async function applyStripeFundedKiloClawPeriod(params: {
     });
   }
 
+  // Steady-state webhook replays against an already-emailed, already-settled
+  // period hit the duplicate-settlement branch on every retry. The real
+  // idempotency guard is the `kiloclaw_email_log` unique index inside
+  // `maybeSendKiloClawSubscriptionStartedEmail`, but we can skip the more
+  // expensive `kiloclaw_subscription_change_log` scan (and the subsequent
+  // no-op send call) when a matching email-log row already exists.
   const shouldSendSubscriptionStartedEmail =
     shouldSendSubscriptionStartedEmailForNewSettlement ||
     (settlementWasDuplicate &&
