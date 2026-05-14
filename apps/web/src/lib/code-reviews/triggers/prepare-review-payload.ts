@@ -44,6 +44,7 @@ import type { CodeReviewAgentConfig } from '@/lib/agent-config/core/types';
 import { logExceptInTest, errorExceptInTest } from '@/lib/utils.server';
 import type { CodeReviewPlatform } from '../core/schemas';
 import { PLATFORM } from '@/lib/integrations/core/constants';
+import { getGitHubPullRequestCheckoutRef } from '@/lib/integrations/platforms/github/webhook-handlers/pull-request-checkout-ref';
 
 export type PreparePayloadParams = {
   reviewId: string;
@@ -305,9 +306,9 @@ export async function prepareReviewPayload(
       }
     }
 
-    // 4. Check for previous completed review (incremental review optimization)
-    // Both previousHeadSha (for diff base) and previousCloudAgentSessionId (for session
-    // continuation) are derived from the same review row to avoid mismatches.
+    // 4. Check for previous completed review (incremental review optimization).
+    // Keep previousHeadSha for prompt diff context, but disable GitHub session
+    // continuation because sendMessageV2 does not refetch refs/pull/<n>/head.
     let previousHeadSha: string | null = null;
     let previousCloudAgentSessionId: string | undefined;
     try {
@@ -318,7 +319,21 @@ export async function prepareReviewPayload(
         platform
       );
       previousHeadSha = previousReview?.head_sha ?? null;
-      previousCloudAgentSessionId = previousReview?.session_id ?? undefined;
+
+      if (previousReview?.session_id) {
+        if (platform === PLATFORM.GITHUB) {
+          logExceptInTest(
+            '[prepareReviewPayload] Disabling GitHub session continuation for pull-ref checkout safety',
+            {
+              reviewId,
+              previousCloudAgentSessionId: previousReview.session_id,
+              upstreamBranch: getGitHubPullRequestCheckoutRef(review.pr_number),
+            }
+          );
+        } else {
+          previousCloudAgentSessionId = previousReview.session_id;
+        }
+      }
 
       if (previousHeadSha) {
         logExceptInTest(
@@ -327,6 +342,7 @@ export async function prepareReviewPayload(
             reviewId,
             previousHeadSha: previousHeadSha.substring(0, 8),
             currentHeadSha: review.head_sha.substring(0, 8),
+            previousSessionIdAvailable: !!previousReview?.session_id,
             previousCloudAgentSessionId,
           }
         );
@@ -381,6 +397,7 @@ export async function prepareReviewPayload(
     // GitLab: uses gitUrl (full HTTPS URL) + gitToken
     const variant = config.thinking_effort ?? undefined;
     const gateThreshold = config.gate_threshold ?? 'off';
+    const githubCheckoutRef = getGitHubPullRequestCheckoutRef(review.pr_number);
     const sessionInput: SessionInput =
       platform === PLATFORM.GITLAB
         ? {
@@ -406,7 +423,7 @@ export async function prepareReviewPayload(
             mode: DEFAULT_CODE_REVIEW_MODE as 'code',
             model: config.model_slug || DEFAULT_CODE_REVIEW_MODEL,
             variant,
-            upstreamBranch: review.head_ref,
+            upstreamBranch: githubCheckoutRef,
             ...(gateThreshold !== 'off' ? { gateThreshold } : {}),
           };
 
