@@ -2395,7 +2395,7 @@ export function SettingsTab({
       )}
 
       {/* ── Developer Tools ── */}
-      {toolEntries.some(e => e.id === 'github' || e.id === 'linear') && (
+      {toolEntries.some(e => e.id === 'github' || e.id === 'linear' || e.id === 'composio') && (
         <div>
           <h2 className="text-foreground mb-3 text-base font-semibold">Developer Tools</h2>
           <div className="space-y-3">
@@ -2438,6 +2438,19 @@ export function SettingsTab({
               ))}
             {toolEntries
               .filter(e => e.id === 'linear')
+              .map(entry => (
+                <SecretEntrySection
+                  key={entry.id}
+                  entry={entry}
+                  configured={configuredSecrets[entry.id] ?? false}
+                  mutations={mutations}
+                  onSecretsChanged={onSecretsChanged}
+                  isDirty={dirtySecrets.has(entry.id)}
+                  onRedeploy={onRedeploy}
+                />
+              ))}
+            {toolEntries
+              .filter(e => e.id === 'composio')
               .map(entry => (
                 <SecretEntrySection
                   key={entry.id}
